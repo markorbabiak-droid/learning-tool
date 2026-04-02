@@ -51,7 +51,7 @@ def get_client():
     return anthropic.Anthropic(api_key=api_key)
 
 
-def call_claude(client, prompt, max_tokens=4000):
+def call_claude(client, prompt, max_tokens=4000, model="claude-sonnet-4-6"):
     """
     Sends a prompt to Claude and returns the response as a plain string.
 
@@ -64,13 +64,16 @@ def call_claude(client, prompt, max_tokens=4000):
       prompt     — the text instructions to send to Claude
       max_tokens — the maximum length Claude can respond with
                    (4000 tokens ≈ about 3,000 words — enough for rich notes)
+      model      — which Claude model to use. Defaults to Sonnet for note
+                   generation. Pass "claude-haiku-4-5-20251001" for cheaper
+                   classification tasks like the Extra field audit.
 
     Returns: Claude's response as a plain Python string.
     """
 
     try:
         response = client.messages.create(
-            model="claude-sonnet-4-6",   # Sonnet — strong enough for note generation, cheaper than Opus
+            model=model,
             max_tokens=max_tokens,
             messages=[
                 {"role": "user", "content": prompt}

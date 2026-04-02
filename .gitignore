@@ -10,7 +10,8 @@ __pycache__/
 .DS_Store
 
 # Generated session data — recreate by running the pipeline
-data/sessions/
+data/sessions/*
+!data/sessions/.gitkeep
 
 # Scratch files
 input1.txt
