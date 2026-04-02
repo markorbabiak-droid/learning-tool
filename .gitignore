@@ -16,3 +16,7 @@ data/sessions/*
 # Scratch files
 input1.txt
 claude_code_research_paper.txt
+
+# Debug output from failed API parse attempts
+data/debug_response.txt
+data/sessions/debug_*.txt

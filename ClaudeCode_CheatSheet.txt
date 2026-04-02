@@ -1,0 +1,282 @@
+================================================================================
+  ⚡ CLAUDE CODE CHEAT SHEET
+  Quick reference for terminal use · ADHD-optimised · Flip to it, use it, ship it
+================================================================================
+
+🧠 THE ONE RULE: PLAN BEFORE YOU CODE. ALWAYS.
+   Context Window = RAM (volatile). Filesystem = Disk (permanent).
+   Write everything important to a file.
+
+================================================================================
+  SECTION 1 — NEW PROJECT SETUP
+  Run these in order every single time
+================================================================================
+
+TERMINAL COMMANDS — run once per project:
+
+  cd my-project              Navigate into your project folder
+  claude                     Start Claude Code session in terminal
+  /init                      Auto-generate starter CLAUDE.md from your codebase
+  # [instruction]            Add a rule to CLAUDE.md on the fly mid-session
+  /config                    Set thinking mode ON, output style Explanatory
+  /model                     Switch model — Opus for planning, Sonnet for coding
+
+AFTER /init — edit CLAUDE.md immediately:
+
+  ✅ Delete anything Claude already does correctly without being told
+  ✅ Add: tech stack, commands (dev/build/test/lint), workflow rules, forbidden patterns
+  ✅ Keep it under 200 lines — beyond this Claude ignores ALL rules uniformly
+  ✅ Commit CLAUDE.md to git immediately so your whole team benefits
+
+NEW PROJECT STARTUP FLOW:
+
+  1. Navigate + start Claude  →  cd my-project && claude
+  2. Generate CLAUDE.md       →  /init  →  edit ruthlessly  →  commit to git
+  3. Create a new git branch  →  Never work on main directly
+  4. Write your feature spec  →  Ask Claude to interview you first (see Section 2)
+  5. Create plan.md           →  Plan Mode → review → approve → THEN code
+
+================================================================================
+  SECTION 2 — NEW FEATURE WORKFLOW
+  The 3-session system that ships reliable code
+================================================================================
+
+--- SESSION 0: RESEARCH (research.md) ---
+Let Claude explore FIRST. Keep this messy. Nothing gets built yet.
+
+  "Research [topic]. Write everything you learn to research.md."
+      → Claude digs deep, writes findings to disk — survives any context reset
+
+  "Interview me using AskUserQuestion tool about [feature]."
+      → Claude asks questions you didn't think to ask — surfaces blind spots
+
+  "What could go wrong with this approach? Add risks to research.md."
+      → Forces adversarial thinking before a line of spec is written
+
+--- SESSION A: SPEC (SPEC.md) ---
+
+  "Read research.md. Write a complete feature spec to SPEC.md."
+      → Distills messy research into clean decisions
+
+  "Add: user stories, API contracts, error states, security considerations."
+      → Forces you to answer every hard question before building
+
+  "What assumptions are you making? List them in SPEC.md."
+      → Surfaces hidden assumptions before they become bugs
+
+--- SESSION B: PLAN (plan.md) — FRESH SESSION ---
+
+  Shift+Tab  Shift+Tab
+      → Enter Plan Mode — Claude CANNOT edit files, only think and plan
+
+  "Read SPEC.md. Ultrathink. Write phase-by-phase plan to plan.md. No code."
+      → Maximum reasoning depth on your plan before a file is touched
+
+  "What is fragile about this plan? What order could break things?"
+      → The 'staff engineer' challenge — finds ordering problems early
+
+  Ctrl+G
+      → Open plan.md in your text editor — add constraints, redirect approach
+
+  "Plan looks good. Proceed with Phase 1 ONLY. Mark tasks [x] as you go."
+      → Explicit scope control — Claude executes exactly what was planned
+
+💡 ADHD TIP: The plan.md checkbox list is your dopamine engine.
+   Each [x] is a small win. You see progress in real time.
+
+================================================================================
+  SECTION 3 — CONTEXT MANAGEMENT
+  How to keep Claude sharp — never let it go dumb
+================================================================================
+
+CHECK CONTEXT BEFORE IT BECOMES A PROBLEM:
+
+  /context             See how full your context window is right now
+  /usage               Check your plan limits and token usage
+  /compact             Auto-compress — Claude summarises what matters
+  /compact Focus on X  Compress but keep specific things — USE THIS ONE
+  /clear               Full reset — wipe context completely (write to files FIRST)
+  /btw [question]      Quick question that NEVER enters context history
+
+THE COMPACTION RULE:
+
+  ⚠️ Run /compact manually at ~50% context — never let it auto-compact on important work
+  ⚠️ Before /compact: "Write current test status and modified files list to progress.md NOW"
+  ⚠️ Use: /compact Focus on [current feature, modified files, active errors]
+  ⚠️ Add to CLAUDE.md: "When compacting, preserve: modified files, test status, active task"
+
+SESSION RECOVERY — coming back after /clear or days away:
+
+  "Read plan.md and continue from where we left off."
+      → Claude tells you: last completed step, current step, blockers — then proceeds
+      → Use EVERY TIME you return after a break or after /clear
+
+  "Read research.md, SPEC.md, and plan.md. Summarise where we are."
+      → Full context recovery — Claude rebuilds working memory from your disk files
+      → Use after a major reset or starting a session on a complex feature
+
+================================================================================
+  SECTION 4 — KEEPING CLAUDE ON THE RAILS
+  When it drifts, veers, or goes off-plan
+================================================================================
+
+WHEN CLAUDE IS IGNORING RULES / VEERING FROM THE PLAN:
+
+  Esc  Esc  or  /rewind
+      → Undo — go back to a checkpoint. Use the MOMENT Claude goes off track.
+
+  "Stop. Read plan.md Phase [N]. Only do the tasks listed there."
+      → Re-anchor to the written plan — don't try to fix in the same context
+
+  "What does CLAUDE.md say about [rule]? Recite the rule, then follow it."
+      → Forces Claude to surface and re-apply the specific rule it ignored
+
+  "Do not write any code. Tell me your plan first."
+      → Hard stop before damage — especially if Claude starts improvising
+
+  /clear + recovery prompt
+      → Nuclear option — full reset + session recovery from plan.md
+
+PREVENTING DRIFT BEFORE IT HAPPENS:
+
+  ⚠️ Never skip Plan Mode for non-trivial tasks — drift happens without a written plan
+  ⚠️ Keep CLAUDE.md under 200 lines — bloated files cause Claude to ignore ALL rules
+  ⚠️ Scope tasks explicitly: "Only touch files in /src/auth/* — nothing else"
+  ⚠️ If you spot drift: /rewind immediately. Never correct a bad path in the same context.
+  ⚠️ End every Phase with: "What did you change? List every file you touched."
+
+CLAUDE.MD RULES BEING IGNORED:
+
+  🚨 Move critical rules to the TOP of CLAUDE.md — LLMs bias toward beginning and end
+  🚨 Convert action rules to hooks — hooks ALWAYS run, CLAUDE.md rules are probabilistic
+  🚨 Test with: "Recite my top 5 rules from CLAUDE.md" at the start of a session
+  🚨 Shorter + more specific = higher compliance. "Use Zod" beats "Always validate input"
+
+================================================================================
+  SECTION 5 — DUAL-CLAUDE REVIEW SYSTEM
+  Two Claudes catch what one misses — always
+================================================================================
+
+HOW TO RUN A SECOND CLAUDE REVIEW SAFELY:
+
+  1. Session A implements
+     → Claude builds the feature, marks plan.md tasks [x], runs tests
+
+  2. Open a SECOND terminal session
+     → claude  →  fresh context, zero knowledge of implementation
+
+  3. Give the reviewer prompt (copy below — don't share Session A context)
+
+  4. Reviewer writes to review.md
+     → Never modifies code — only produces a written critique
+
+  5. You decide what to fix
+     → You read review.md and decide — you are the architect
+
+THE REVIEWER PROMPT — copy this exactly:
+
+  "You are a senior staff engineer doing a code review.
+   You have ZERO context from the implementation session.
+   Read these files: [list the files Claude touched]
+   Challenge every assumption. What is fragile? What breaks at 10x load?
+   What security issue did the implementer miss?
+   Write your full review to review.md. Do not change any code."
+
+💡 The reviewer has no emotional attachment to the code. It will challenge things
+   the implementer rationalised away. That is the whole point.
+
+================================================================================
+  SECTION 6 — REASONING DEPTH + USEFUL COMMANDS
+  Match the thinking level to the task
+================================================================================
+
+PROMPT KEYWORDS — controls how hard Claude thinks:
+
+  "ultrathink [task]"          Maximum depth — architecture, plans, security review
+  "think hard about [task]"    High depth — tricky bugs, API design, edge cases
+  "think carefully about [X]"  Medium depth — complex but scoped problems
+  (no keyword)                 Standard — simple edits, boilerplate, known patterns
+
+MODEL SELECTION — matters a lot:
+
+  /model  →  Opus      Planning, architecture, spec writing, code review
+  /model  →  Sonnet    Executing plan tasks, writing code, tests
+  /model  →  Haiku     Quick edits, boilerplate, single-line changes
+
+HIGH-VALUE COMMANDS YOU WILL USE DAILY:
+
+  /rename [name]           Name session — e.g. /rename feat-auth-phase2
+  /resume                  Resume a named session from where you left off
+  /voice  +  hold Space    Push-to-talk dictation (great for ADHD)
+  /loop 5m [check X]       Recurring background check — monitors deploys, CI
+  /schedule [task]         Cloud-based recurring task — runs when machine is off
+  /batch                   Parallel refactoring across codebase (git worktrees)
+  /plugins                 Browse + install marketplace extensions
+  claude remote-control    Start session, access from phone or browser
+
+================================================================================
+  SECTION 7 — YOUR ADHD EDGE — CHEAT CODES
+  How to turn ADHD traits into shipping superpowers
+================================================================================
+
+TRAIT              SUPERPOWER                              USE IT LIKE THIS
+---------------------------------------------------------------------------
+Hyperfocus       You go deeper than anyone when locked in  Use Plan Mode to scope it. Then
+                                                           hyperfocus on Phase 1 only.
+
+Pattern jumping  You connect dots across domains others    Session 0 research is yours. Let
+                 miss                                      Claude dig — you synthesise.
+
+Noticing         You feel when something is wrong before   Trust this. When Claude's plan
+friction         you can explain it                        feels off, ask: "What are you
+                                                           assuming here?"
+
+High iteration   You'll try 10 approaches where others     Use /rewind freely. Each rewind
+tolerance        quit at 3                                 is a free iteration.
+
+Boredom with     Forces you to automate the boring stuff   Build skills (.claude/skills/)
+repetition       fast                                      for anything you do twice.
+
+Urgency +        You ship when energised — and stall       plan.md checkboxes give you
+momentum         when not                                  momentum. One [x] leads to next.
+
+---------------------------------------------------------------------------
+
+THE MOMENTUM LOOP — for when you stall:
+
+  1. Open plan.md
+     → Find the SMALLEST unchecked task — not the most important, the smallest
+
+  2. Do only that one task
+     → One checkbox. That's it. Don't look at the rest.
+
+  3. Mark it [x]
+     → Feel the win. That's real. Momentum is now yours.
+
+  4. Pick the next smallest
+     → Repeat until you're in flow, then take on a bigger Phase task.
+
+BUILDING DOMAIN EXPERTISE WITHOUT HAVING IT YET:
+
+  🌱 You build expertise by building things — not by studying.
+     Each project answers questions you didn't know to ask.
+
+  🌱 After Session 0 research, ask: "What do I still not understand?"
+     That gap is what to google or dig into.
+
+  🌱 Let Claude's AskUserQuestion interviews train you.
+     The questions it asks reveal what you need to learn.
+
+  🌱 Write a DECISIONS.md per project.
+     Every architecture choice + why = compounding expertise.
+
+  🌱 After 5-10 projects in one space, you will have more domain
+     knowledge than you realise.
+
+================================================================================
+  THE SYSTEM IS SIMPLE:
+
+  Research → Spec → Plan → Execute → Review → Ship → Learn → Repeat
+
+  You are not behind. You are at the beginning of a compounding loop. Start it.
+================================================================================
