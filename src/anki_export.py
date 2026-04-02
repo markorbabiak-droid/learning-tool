@@ -55,12 +55,22 @@ __IMPORTANCE__
 ──────────────────────────────────────────────────────
 CLOZE LOGIC
 ──────────────────────────────────────────────────────
-- {{c1::text}} = the single most important fact being tested — the harder thing to remember
-- {{c2::text}} = supporting detail, secondary label, or explanatory context revealed together
-- When two things are paired (name ↔ definition, label ↔ meaning), put both in the same cloze number so they're revealed together
-- Always ask: "which half of this pair is harder to retrieve?" — that half becomes c1
+- {{c1::text}} = the ONE hardest, most critical fact — a command, threshold number, or specific term
+- {{c2::text}} = a secondary hint revealed AT THE SAME TIME as c1, not a separate blank
+- When two things are paired (name ↔ definition, label ↔ meaning), put both in the same cloze number
+- Always ask: "which half is harder to retrieve?" — that half is c1. If in doubt, use ONLY c1.
 - Short factual: {{c2::Fraternal}} twins are {{c1::dizygotic}}
 - Mechanistic: The myoglobin curve is {{c2::*hyperbolic*}} because {{c1::it only has **one** heme group and cannot exhibit cooperative binding}}
+
+──────────────────────────────────────────────────────
+STRICT NEGATIVE CONSTRAINTS — NEVER VIOLATE THESE
+──────────────────────────────────────────────────────
+- NEVER use c1 and c2 as sequential blanks in a sentence (Mad Libs style). This is the most common error.
+  WRONG: "Run {{c1::git commit}} then {{c2::git push}}"  ← two separate facts, two separate cards
+  RIGHT: "{{c2::committing}} changes is finalized by {{c1::git push}}"  ← c2 is a hint, c1 is the testable fact
+- NEVER blank out random halves of a sentence. Identify the ONE hardest fact and blank only that.
+- NEVER write a prompt sentence longer than 20 words. Cut ruthlessly.
+- NEVER let the content_type be decorative — every card must match its declared content_type in structure and what it tests.
 
 ──────────────────────────────────────────────────────
 CARD INTEGRITY RULES
@@ -182,6 +192,82 @@ If nothing should be promoted:
 
 If content should be promoted:
 {"promoted_cards": [{"text": "cloze sentence", "extra": "brief context if needed", "content_type": "comparative", "promoted_from_card_index": 3}], "updated_extras": {"3": "updated extra for card index 3 with the promoted content removed"}}"""
+
+
+CHUNK_GENERATION_PROMPT = """You are an expert Anki card writer. Analyze the following text segment and generate cloze deletion flashcards that test the most important facts in it.
+
+TEXT SEGMENT:
+__CHUNK__
+
+──────────────────────────────────────────────────────
+STRICT NEGATIVE CONSTRAINTS — NEVER VIOLATE THESE
+──────────────────────────────────────────────────────
+- NEVER use c1 and c2 as sequential blanks in a sentence (Mad Libs style).
+  WRONG: "Run {{c1::git commit}} then {{c2::git push}}"
+  RIGHT: "Changes are published to remote with {{c1::git push}}"
+- NEVER blank out random halves of a sentence. ONE hardest fact = ONE c1 blank.
+- c2 is ONLY a secondary hint revealed simultaneously with c1, never a second blank.
+- If in doubt, use ONLY c1.
+- NEVER write a prompt sentence longer than 20 words. Cut ruthlessly.
+- NEVER let content_type be decorative — it must match what the card actually tests.
+
+──────────────────────────────────────────────────────
+CLOZE LOGIC
+──────────────────────────────────────────────────────
+- {{c1::text}} = the ONE hardest, most critical fact — a command, threshold number, or specific term
+- {{c2::text}} = a secondary hint revealed AT THE SAME TIME as c1, not a separate blank
+- Always ask: "which fact is hardest to retrieve?" — blank only that. If in doubt, use only c1.
+- Short factual: {{c2::Fraternal}} twins are {{c1::dizygotic}}
+- Mechanistic: The myoglobin curve is {{c2::*hyperbolic*}} because {{c1::it only has **one** heme group}}
+
+──────────────────────────────────────────────────────
+CARD INTEGRITY RULES
+──────────────────────────────────────────────────────
+- One clearly testable fact per card
+- Create at least one failure-mode card per major concept: "Without X, {{c1::...}} fails"
+- Test retrieval, not recognition — force the reader to generate the answer
+- Cover applicable angles: definition, mechanism, consequence, contrast, failure mode
+
+──────────────────────────────────────────────────────
+FORMATTING RULES
+──────────────────────────────────────────────────────
+- Bold (**text**) critical terms or numbers
+- Italics for technical descriptors
+- Natural flowing sentences, not bullet points
+- Max 20 words per card before cloze markup
+
+──────────────────────────────────────────────────────
+EXTRA FIELD RULES
+──────────────────────────────────────────────────────
+- Brief clarifying context only (abbreviations, synonyms, [image] placeholders)
+- Do NOT put testable facts here — those become their own cards
+
+──────────────────────────────────────────────────────
+CONTENT TYPES
+──────────────────────────────────────────────────────
+factual-definition, mechanistic-process, sequential-stepwise,
+conceptual-theoretical, comparative, numerical-quantitative, failure-mode
+
+──────────────────────────────────────────────────────
+PRE-OUTPUT CHECKLIST
+──────────────────────────────────────────────────────
+1. Near-duplicate scan: if two cards have the same correct answer, delete one. Max 8 cards per chunk.
+2. Duplicate c1 check: two c1s testing different facts = error. Fix to c1/c2.
+3. Semicolon check: one cloze = one fact. Split if needed.
+
+──────────────────────────────────────────────────────
+OUTPUT FORMAT
+──────────────────────────────────────────────────────
+Return ONLY a valid JSON array. No prose, no explanation, no markdown fences.
+The response must start with [ and end with ].
+
+[
+  {
+    "text": "Card text with {{c1::cloze}} deletions",
+    "extra": "Context or explanation",
+    "content_type": "mechanistic-process"
+  }
+]"""
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -375,6 +461,193 @@ def run_extra_audit(client, concept_cards, session_dir, concept_index):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# CHUNK-BASED GENERATION
+# Primary pipeline. Takes a source .txt file directly, splits it into focused
+# sections, and generates cards from each section independently.
+# ─────────────────────────────────────────────────────────────────────────────
+
+def chunk_source_material(filepath):
+    """
+    Break a source text file into focused, independently processable chunks.
+
+    Splitting strategy (in order of preference):
+      1. Section headers — lines of =/- characters, # Markdown headers,
+         or ALL-CAPS lines indicate topic boundaries in structured documents.
+      2. Word-count cap — any section longer than 500 words is further split
+         into ~400-word sub-chunks to keep each API call tightly focused.
+      3. Minimum filter — chunks under 20 words (blank lines, stray headers)
+         are dropped.
+
+    Returns a list of plain text strings, one per chunk.
+    """
+    with open(filepath, 'r', encoding='utf-8') as f:
+        content = f.read()
+
+    lines = content.split('\n')
+    raw_chunks = []
+    current = []
+
+    for line in lines:
+        # Detect section boundaries: ===, ---, ### lines or ALL CAPS headings
+        is_boundary = (
+            re.match(r'^[=\-]{3,}\s*$', line) or
+            re.match(r'^#+\s', line) or
+            (line.strip() and line.strip() == line.strip().upper() and len(line.strip()) > 3)
+        )
+        if is_boundary and current:
+            raw_chunks.append('\n'.join(current).strip())
+            current = [line]
+        else:
+            current.append(line)
+
+    if current:
+        raw_chunks.append('\n'.join(current).strip())
+
+    # Split any over-length chunks into ~400-word sub-chunks
+    MAX_WORDS = 500
+    SUB_CHUNK_SIZE = 400
+    final_chunks = []
+    for chunk in raw_chunks:
+        words = chunk.split()
+        if len(words) <= MAX_WORDS:
+            final_chunks.append(chunk)
+        else:
+            for j in range(0, len(words), SUB_CHUNK_SIZE):
+                sub = ' '.join(words[j:j + SUB_CHUNK_SIZE])
+                if sub.strip():
+                    final_chunks.append(sub)
+
+    # Drop chunks too short to produce meaningful cards
+    return [c for c in final_chunks if len(c.split()) >= 20]
+
+
+def make_chunk_slug(chunk, index):
+    """
+    Build a short Anki tag slug from the first meaningful words of a chunk.
+    Same logic as make_concept_slug but applied to raw chunk text.
+    """
+    first_line = chunk.split('\n')[0]
+    text = re.sub(r'[^\w\s]', '', first_line.lower())
+    words = text.split()
+    starters = {'what', 'how', 'why', 'when', 'where', 'which', 'does', 'is',
+                'are', 'the', 'a', 'an', 'do', 'can', 'if', 'in', 'will'}
+    meaningful = [w for w in words if w not in starters]
+    slug = '-'.join(meaningful[:5])
+    return slug[:50] if slug else f'chunk-{index + 1}'
+
+
+def build_chunk_prompt(chunk):
+    """
+    Inject one chunk of source text into the chunk card generation prompt.
+    Uses .replace() — same reason as build_card_prompt (curly brace collisions).
+    """
+    return CHUNK_GENERATION_PROMPT.replace('__CHUNK__', chunk)
+
+
+def generate_cards_for_chunk(client, chunk, chunk_index, session_dir):
+    """
+    Call Claude (Sonnet) to generate cloze cards for one text chunk.
+    Retries once on JSON parse failure before giving up.
+    Returns a list of card dicts.
+    """
+    prompt = build_chunk_prompt(chunk)
+    debug_path = os.path.join(session_dir, f'debug_chunk_{chunk_index}.txt')
+
+    response = call_claude(client, prompt, max_tokens=4000)
+    result = parse_json_response(response, debug_path)
+
+    if result is None:
+        print(f'    Parse failed — retrying chunk {chunk_index + 1}...')
+        response = call_claude(client, prompt, max_tokens=4000)
+        result = parse_json_response(response, debug_path)
+
+    if result is None:
+        print(f'    Both attempts failed. Skipping chunk {chunk_index + 1}.')
+        return []
+
+    return extract_cards(result)
+
+
+def make_session_dir_from_text(source_path):
+    """
+    Create a data/sessions/ folder for a source .txt file, named after the
+    filename stem + today's date. Returns the path to the created folder.
+    """
+    from datetime import date
+    stem = Path(source_path).stem.lower()
+    stem = re.sub(r'[^\w\-]', '-', stem)[:40]
+    today = date.today().strftime('%Y-%m-%d')
+    session_name = f'{stem}-{today}'
+    session_dir = os.path.join('data', 'sessions', session_name)
+
+    # Add a numeric suffix if the folder already exists
+    if os.path.exists(session_dir):
+        suffix = 2
+        while os.path.exists(f'{session_dir}-{suffix}'):
+            suffix += 1
+        session_dir = f'{session_dir}-{suffix}'
+
+    os.makedirs(session_dir, exist_ok=True)
+    return session_dir
+
+
+def generate_cards_from_file(client, filepath, session_dir, card_limit=None):
+    """
+    Primary generation pipeline. Reads a source .txt file, splits it into
+    focused chunks, and runs generate → audit on each chunk independently.
+
+    Per-chunk isolation means:
+      - Each API call stays tightly focused on one section
+      - A parse failure in one chunk does not affect the others
+      - Payloads are always small (< 500 words in, < 8 cards out per chunk)
+
+    Returns (all_cards, total_promoted).
+    """
+    chunks = chunk_source_material(filepath)
+
+    if not chunks:
+        print('\n  Error: No usable text chunks found in the source file.')
+        sys.exit(1)
+
+    limit_msg = f'  (card limit: {card_limit})' if card_limit else ''
+    print(f'\nProcessing {len(chunks)} chunks from source file...{limit_msg}')
+    print(f'  (Generate → Audit per chunk. Usually 20-40s per chunk.)')
+
+    all_cards = []
+    total_promoted = 0
+
+    for i, chunk in enumerate(chunks):
+        if card_limit and len(all_cards) >= card_limit:
+            print(f'\n  Limit of {card_limit} cards reached — stopping early.')
+            break
+
+        preview = chunk.replace('\n', ' ')[:65]
+        print(f'\n  [{i + 1}/{len(chunks)}] {preview}...')
+
+        # Pass 1: Generate (Sonnet)
+        cards = generate_cards_for_chunk(client, chunk, i, session_dir)
+        print(f'          {len(cards)} card{"s" if len(cards) != 1 else ""} generated')
+
+        # Pass 2: Audit extras (Haiku)
+        cards, promoted = run_extra_audit(client, cards, session_dir, i)
+        if promoted > 0:
+            print(f'          +{promoted} promoted from Extra  →  {len(cards)} total')
+        total_promoted += promoted
+
+        # Tag cards with a slug derived from the chunk's opening text
+        chunk_slug = make_chunk_slug(chunk, i)
+        for card in cards:
+            card['concept_slug'] = chunk_slug
+
+        all_cards.extend(cards)
+
+    if card_limit and len(all_cards) > card_limit:
+        all_cards = all_cards[:card_limit]
+
+    return all_cards, total_promoted
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # ANKI PACKAGE CONSTANTS
 #
 # These integers must never change after first use. Anki uses them to identify
@@ -505,16 +778,15 @@ def save_csv(all_cards, output_path, topic):
             writer.writerow([text, extra, tags])
 
 
-def main(json_path, card_limit=None):
+def main(source_path, card_limit=None):
     """
     Entry point for the Anki export pipeline.
 
-    Per-concept loop:
-      For each concept:
-        1. Generate cloze cards (Sonnet)
-        2. Immediately audit Extra fields (Haiku)
-        3. Tag all cards with the concept slug
-      Then save everything to cornell.csv and cornell.apkg.
+    Routes on file extension:
+      .txt  → chunk-based pipeline (PRIMARY): reads source text directly,
+              splits into sections, generates + audits per chunk.
+      .json → concept-based pipeline (LEGACY): reads cornell.json produced
+              by note_engine.py, generates + audits per critical_concept.
 
     card_limit — optional int. Stop after this many total cards (for test runs).
     """
@@ -523,60 +795,69 @@ def main(json_path, card_limit=None):
     print('  ATLAS — Anki Cloze Export')
     print('═' * 47)
 
-    # ── Load ──────────────────────────────────────────
-    print('\nLoading notes...')
-    notes = load_json(json_path)
-
-    topic = notes.get('topic', 'Unknown Topic')
-    concepts = notes.get('critical_concepts', [])
-    session_dir = str(Path(json_path).parent)
-
-    print(f'  Topic:    {topic}')
-    print(f'  Concepts: {len(concepts)}')
-
-    if not concepts:
-        print('\n  Error: No critical_concepts found in the JSON.')
-        print('  Make sure you are pointing at a valid cornell.json file.')
-        sys.exit(1)
-
     client = get_client()
-    all_cards = []
-    total_promoted = 0
+    source_path = str(source_path)
 
-    # ── Per-concept loop ──────────────────────────────
-    limit_msg = f'  (card limit: {card_limit})' if card_limit else ''
-    print(f'\nProcessing concepts...{limit_msg}')
-    print(f'  (Generate → Audit per concept. Usually 20-40s per concept.)')
+    # ── Route on file type ────────────────────────────
+    if source_path.endswith('.txt'):
+        # PRIMARY: chunk-based generation from raw source text
+        topic = Path(source_path).stem.replace('-', ' ').replace('_', ' ').title()
+        session_dir = make_session_dir_from_text(source_path)
 
-    for i, concept in enumerate(concepts):
-        # Stop early if we've already hit the card limit
-        if card_limit and len(all_cards) >= card_limit:
-            print(f'\n  Limit of {card_limit} cards reached — stopping early.')
-            break
+        print(f'\n  Source: {source_path}')
+        print(f'  Topic:  {topic}')
+        print(f'  Output: {session_dir}')
 
-        concept_slug = make_concept_slug(concept.get('cue', ''), i)
-        cue_preview = concept.get('cue', '')[:65]
-        print(f'\n  [{i + 1}/{len(concepts)}] {cue_preview}...')
+        all_cards, total_promoted = generate_cards_from_file(
+            client, source_path, session_dir, card_limit
+        )
 
-        # Pass 1: Generate cards (Sonnet)
-        cards = generate_cards_for_concept(client, concept, i, session_dir)
-        print(f'          {len(cards)} card{"s" if len(cards) != 1 else ""} generated')
+    else:
+        # LEGACY: concept-based generation from cornell.json
+        print('\nLoading notes...')
+        notes = load_json(source_path)
 
-        # Pass 2: Audit extras (Haiku)
-        cards, promoted = run_extra_audit(client, cards, session_dir, i)
-        if promoted > 0:
-            print(f'          +{promoted} promoted from Extra  →  {len(cards)} total')
-        total_promoted += promoted
+        topic = notes.get('topic', 'Unknown Topic')
+        concepts = notes.get('critical_concepts', [])
+        session_dir = str(Path(source_path).parent)
 
-        # Tag every card with its concept slug so Anki can filter by concept
-        for card in cards:
-            card['concept_slug'] = concept_slug
+        print(f'  Topic:    {topic}')
+        print(f'  Concepts: {len(concepts)}')
 
-        all_cards.extend(cards)
+        if not concepts:
+            print('\n  Error: No critical_concepts found in the JSON.')
+            print('  Make sure you are pointing at a valid cornell.json file.')
+            sys.exit(1)
 
-    # Trim to exact limit if the last concept pushed us over
-    if card_limit and len(all_cards) > card_limit:
-        all_cards = all_cards[:card_limit]
+        all_cards = []
+        total_promoted = 0
+        limit_msg = f'  (card limit: {card_limit})' if card_limit else ''
+        print(f'\nProcessing concepts...{limit_msg}')
+        print(f'  (Generate → Audit per concept. Usually 20-40s per concept.)')
+
+        for i, concept in enumerate(concepts):
+            if card_limit and len(all_cards) >= card_limit:
+                print(f'\n  Limit of {card_limit} cards reached — stopping early.')
+                break
+
+            concept_slug = make_concept_slug(concept.get('cue', ''), i)
+            cue_preview = concept.get('cue', '')[:65]
+            print(f'\n  [{i + 1}/{len(concepts)}] {cue_preview}...')
+
+            cards = generate_cards_for_concept(client, concept, i, session_dir)
+            print(f'          {len(cards)} card{"s" if len(cards) != 1 else ""} generated')
+
+            cards, promoted = run_extra_audit(client, cards, session_dir, i)
+            if promoted > 0:
+                print(f'          +{promoted} promoted from Extra  →  {len(cards)} total')
+            total_promoted += promoted
+
+            for card in cards:
+                card['concept_slug'] = concept_slug
+            all_cards.extend(cards)
+
+        if card_limit and len(all_cards) > card_limit:
+            all_cards = all_cards[:card_limit]
 
     # ── Save ──────────────────────────────────────────
     print(f'\n{"─" * 47}')
@@ -606,7 +887,8 @@ def main(json_path, card_limit=None):
 if __name__ == '__main__':
     if len(sys.argv) < 2:
         print()
-        print('  Usage: python3 src/anki_export.py data/sessions/my-topic/cornell.json [--limit N]')
+        print('  Usage (primary):  python3 src/anki_export.py source.txt [--limit N]')
+        print('  Usage (legacy):   python3 src/anki_export.py cornell.json [--limit N]')
         print()
         print('  --limit N   Stop after N total cards (useful for test runs)')
         print()
