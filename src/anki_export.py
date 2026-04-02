@@ -115,6 +115,31 @@ SELF-AUDIT (apply before finalizing each card)
 - Does this concept need a failure-mode card that hasn't been written yet?
 
 ──────────────────────────────────────────────────────
+PRE-OUTPUT CHECKLIST (run on the full concept card set before returning)
+──────────────────────────────────────────────────────
+Run these three checks after drafting all cards, before finalizing output.
+Prevention at generation is cheaper than correction at audit.
+
+1. NEAR-DUPLICATE SCAN
+   Scan for cards that test the same underlying fact from slightly different angles.
+   If two cards would have the same correct answer, merge or delete one.
+   Depth is fine — redundancy is waste:
+     - 10 cards covering 10 distinct angles = good
+     - 10 cards covering 3 angles with repetition = bad
+   Target: 8-10 cards per concept maximum.
+   If you exceed 10, remove near-duplicates first.
+   If genuinely distinct facts justify going over 10, justify each card beyond card 8.
+
+2. DUPLICATE c1 CHECK
+   Check every card for two {{c1::...}} deletions testing DIFFERENT facts.
+   That is a cloze logic error — one must become c2.
+   The only valid reason for two c1s: both deletions reveal as a single unified answer.
+
+3. SEMICOLON / TWO-DEFINITION CHECK
+   If a single cloze deletion contains a semicolon, "and", or defines two separate
+   things — split it into two cards. One cloze = one retrievable fact, no exceptions.
+
+──────────────────────────────────────────────────────
 OUTPUT FORMAT
 ──────────────────────────────────────────────────────
 Return ONLY valid JSON. No prose, no explanation, no markdown fences.

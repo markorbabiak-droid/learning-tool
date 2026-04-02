@@ -16,7 +16,7 @@ cards that are secretly testing two things.
 
 ---
 
-## The Five Audit Questions
+## The Seven Audit Questions
 
 Run these against every card in the deck:
 
@@ -60,7 +60,29 @@ produce a complete, valid card on its own — it's two cards.
 
 ---
 
-### 5. Does this concept have a failure-mode card?
+### 5. Duplicate c1 error
+Check every card for two `{{c1::...}}` deletions that test **different facts**.
+If a card contains two c1 deletions where each tests a distinct retrievable fact,
+that is a cloze logic error — one must become c2.
+
+The only valid reason for two c1s: both deletions are part of a single unified
+answer revealed together (e.g., a tightly paired name ↔ definition).
+
+**Flag:** "Duplicate c1 error — card has two c1 deletions testing different facts; second should be c2"
+
+---
+
+### 6. Semicolon / two-definition in a single cloze
+If a single `{{c1::...}}` or `{{c2::...}}` deletion contains a semicolon, "and",
+or defines two separate things — it must be split into two cards.
+
+One cloze = one retrievable fact. No exceptions.
+
+**Flag:** "Compound cloze — '[cloze content]' defines two things; split into two cards"
+
+---
+
+### 7. Does this concept have a failure-mode card?
 For every major concept in the deck, there should be at least one card that
 tests what breaks or goes wrong without it. Absence of failure-mode cards is
 the most common gap in a deck that otherwise looks complete.

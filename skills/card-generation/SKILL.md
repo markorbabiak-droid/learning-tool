@@ -88,3 +88,34 @@ deletion cards that together cover the concept from multiple testable angles.
 - [ ] Is anything important hiding in the Extra field?
 - [ ] Is this card secretly testing two things?
 - [ ] Does this concept need a failure-mode card that hasn't been written yet?
+
+---
+
+## Pre-Output Checklist (run on every concept before returning cards)
+
+These three checks prevent the most common generation errors. Run them after
+drafting all cards for a concept, before finalizing output.
+
+### 1. Near-duplicate scan
+Scan for cards that test the same underlying fact from only slightly different
+angles. **If two cards would have the same correct answer, merge or delete one.**
+
+Depth is fine — redundancy is waste:
+- 10 cards covering 10 distinct angles = good
+- 10 cards covering 3 angles with repetition = bad
+
+Aim for a maximum of **8–10 cards per concept**. If you exceed 10, identify and
+remove near-duplicates first. If genuinely distinct testable facts justify going
+over 10, flag it and justify each card beyond card 8.
+
+### 2. Duplicate c1 check
+Check every card for two `{{c1::...}}` deletions that test **different facts**.
+That is a cloze logic error — one should be `c2`.
+
+The only valid reason for two `c1`s on the same card: both deletions are revealed
+together as a single unified answer (e.g., a paired name ↔ definition that cannot
+be separated).
+
+### 3. Semicolon / two-definition check
+If a single cloze deletion contains a semicolon, "and", or defines two separate
+things — split it into two cards. One cloze = one retrievable fact, no exceptions.
