@@ -1,0 +1,17 @@
+# Your secret API key — never commit this
+.env
+
+# Python's internal compiled files — you don't need to track these
+__pycache__/
+*.pyc
+*.pyo
+
+# Mac metadata files — not part of the project
+.DS_Store
+
+# Generated session data — recreate by running the pipeline
+data/sessions/
+
+# Scratch files
+input1.txt
+claude_code_research_paper.txt
