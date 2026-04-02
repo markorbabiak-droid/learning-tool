@@ -385,6 +385,45 @@ ANKI_MODEL_ID = 1607392319
 ANKI_DECK_ID  = 2059400110
 
 
+ANKI_CARD_CSS = """
+.card {
+    background-color: #2E3440;
+    color: #ECEFF4;
+    font-family: 'Fira Code', 'Roboto', Arial, sans-serif;
+    font-size: 18px;
+    text-align: center;
+    padding: 20px;
+}
+
+/* Constrain width to prevent eye-tracking fatigue on wide monitors */
+.card-content {
+    max-width: 600px;
+    margin: 0 auto;
+    text-align: left;
+}
+
+/* Cloze deletion — high-contrast green, bold */
+.cloze {
+    font-weight: bold;
+    color: #A3BE8C;
+}
+
+/* Extra / context field — muted, smaller, italic */
+.extra-context {
+    font-style: italic;
+    font-size: 14px;
+    color: #D8DEE9;
+    margin-top: 8px;
+}
+
+hr {
+    border: none;
+    border-top: 1px solid #4C566A;
+    margin: 16px 0;
+}
+"""
+
+
 def save_apkg(all_cards, output_path, topic):
     """
     Write all cards to an Anki .apkg package file using genanki.
@@ -395,14 +434,14 @@ def save_apkg(all_cards, output_path, topic):
 
     Model fields:
       Text  — the cloze sentence (rendered as a cloze card in Anki)
-      Extra — shown below the answer after reveal
+      Extra — shown below the answer after reveal, wrapped in .extra-context
 
     The model_id and deck_id are hardcoded. Do not change them — Anki uses
     these integers to match imported cards to existing notes and decks.
     """
     import genanki
 
-    # Define the Cloze note model
+    # Define the Cloze note model with custom CSS
     model = genanki.Model(
         ANKI_MODEL_ID,
         'ATLAS Cloze',
@@ -414,10 +453,11 @@ def save_apkg(all_cards, output_path, topic):
         templates=[
             {
                 'name': 'ATLAS Cloze Card',
-                'qfmt': '{{cloze:Text}}',
-                'afmt': '{{cloze:Text}}<br><hr><br>{{Extra}}',
+                'qfmt': '<div class="card-content">{{cloze:Text}}</div>',
+                'afmt': '<div class="card-content">{{cloze:Text}}<hr><div class="extra-context">{{Extra}}</div></div>',
             }
-        ]
+        ],
+        css=ANKI_CARD_CSS,
     )
 
     deck = genanki.Deck(ANKI_DECK_ID, f'ATLAS - {topic}')
@@ -464,7 +504,7 @@ def save_csv(all_cards, output_path, topic):
             writer.writerow([text, extra, tags])
 
 
-def main(json_path):
+def main(json_path, card_limit=None):
     """
     Entry point for the Anki export pipeline.
 
@@ -473,7 +513,9 @@ def main(json_path):
         1. Generate cloze cards (Sonnet)
         2. Immediately audit Extra fields (Haiku)
         3. Tag all cards with the concept slug
-      Then save everything to cornell.csv.
+      Then save everything to cornell.csv and cornell.apkg.
+
+    card_limit — optional int. Stop after this many total cards (for test runs).
     """
     print()
     print('═' * 47)
@@ -501,10 +543,16 @@ def main(json_path):
     total_promoted = 0
 
     # ── Per-concept loop ──────────────────────────────
-    print(f'\nProcessing concepts...')
+    limit_msg = f'  (card limit: {card_limit})' if card_limit else ''
+    print(f'\nProcessing concepts...{limit_msg}')
     print(f'  (Generate → Audit per concept. Usually 20-40s per concept.)')
 
     for i, concept in enumerate(concepts):
+        # Stop early if we've already hit the card limit
+        if card_limit and len(all_cards) >= card_limit:
+            print(f'\n  Limit of {card_limit} cards reached — stopping early.')
+            break
+
         concept_slug = make_concept_slug(concept.get('cue', ''), i)
         cue_preview = concept.get('cue', '')[:65]
         print(f'\n  [{i + 1}/{len(concepts)}] {cue_preview}...')
@@ -524,6 +572,10 @@ def main(json_path):
             card['concept_slug'] = concept_slug
 
         all_cards.extend(cards)
+
+    # Trim to exact limit if the last concept pushed us over
+    if card_limit and len(all_cards) > card_limit:
+        all_cards = all_cards[:card_limit]
 
     # ── Save ──────────────────────────────────────────
     print(f'\n{"─" * 47}')
@@ -551,10 +603,24 @@ def main(json_path):
 # ENTRY POINT
 # ─────────────────────────────────────────────────────────────────────────────
 if __name__ == '__main__':
-    if len(sys.argv) != 2:
+    if len(sys.argv) < 2:
         print()
-        print('  Usage: python3 src/anki_export.py data/sessions/my-topic/cornell.json')
+        print('  Usage: python3 src/anki_export.py data/sessions/my-topic/cornell.json [--limit N]')
+        print()
+        print('  --limit N   Stop after N total cards (useful for test runs)')
         print()
         sys.exit(1)
 
-    main(sys.argv[1])
+    _json_path = sys.argv[1]
+    _limit = None
+
+    # Parse optional --limit N flag
+    if '--limit' in sys.argv:
+        idx = sys.argv.index('--limit')
+        try:
+            _limit = int(sys.argv[idx + 1])
+        except (IndexError, ValueError):
+            print('  Error: --limit requires an integer argument (e.g. --limit 10)')
+            sys.exit(1)
+
+    main(_json_path, card_limit=_limit)
