@@ -142,9 +142,16 @@ Prevention at generation is cheaper than correction at audit.
 ──────────────────────────────────────────────────────
 OUTPUT FORMAT
 ──────────────────────────────────────────────────────
-Return ONLY valid JSON. No prose, no explanation, no markdown fences.
+Return ONLY a valid JSON array. No prose, no explanation, no markdown fences.
+The response must start with [ and end with ].
 
-{"cards": [{"text": "cloze sentence here", "extra": "extra field content here", "content_type": "factual-definition"}]}"""
+[
+  {
+    "text": "Card text with {{c1::cloze}} deletions",
+    "extra": "Context or explanation",
+    "content_type": "mechanistic-process"
+  }
+]"""
 
 
 EXTRA_AUDIT_PROMPT = """You are auditing Anki flashcard Extra fields for testable content that should become its own card.
@@ -250,16 +257,23 @@ def build_audit_prompt(cards):
 
 def parse_json_response(response_string, debug_path=None):
     """
-    Extract JSON from Claude's response.
-    Claude sometimes wraps JSON in markdown fences despite being told not to.
-    Strips those fences if present, then parses. If parsing fails, saves the
-    raw response to a debug file so nothing is lost.
+    Extract a JSON value from Claude's response.
+
+    Strips markdown code fences if Claude hallucinated them, then parses.
+    Normalises the result: the card generation prompt returns a JSON array;
+    older prompts returned {"cards": [...]}. Both are accepted and always
+    returned as a plain Python value (list or dict) — callers decide which
+    they expect.
+
+    On failure: logs the raw response to debug_path and returns None.
     """
     text = response_string.strip()
 
-    # Strip markdown code fences if Claude wrapped the response
+    # Strip markdown fences — Claude sometimes adds these even when told not to.
+    # Handles ```json, ```JSON, ``` with or without a language tag.
     if text.startswith('```'):
         lines = text.split('\n')
+        # Drop the opening fence line and the closing fence line
         text = '\n'.join(lines[1:-1]).strip()
 
     try:
@@ -274,10 +288,29 @@ def parse_json_response(response_string, debug_path=None):
         return None
 
 
+def extract_cards(result):
+    """
+    Normalise the parsed JSON from a card generation call into a plain list.
+
+    Accepts both the new format (JSON array) and the legacy format
+    ({"cards": [...]}) so old debug files stay compatible.
+    Returns an empty list if the result is neither.
+    """
+    if isinstance(result, list):
+        return result
+    if isinstance(result, dict):
+        return result.get('cards', [])
+    return []
+
+
 def generate_cards_for_concept(client, concept, concept_index, session_dir):
     """
     Call Claude (Sonnet) to generate cloze cards for one concept.
-    Returns a list of card dicts. Returns empty list on failure.
+
+    On a JSON parse failure, retries the API call once before giving up.
+    This catches transient formatting errors without silently losing a concept.
+
+    Returns a list of card dicts. Returns empty list if both attempts fail.
     """
     prompt = build_card_prompt(concept)
     debug_path = os.path.join(session_dir, f'debug_cards_concept_{concept_index}.txt')
@@ -286,9 +319,16 @@ def generate_cards_for_concept(client, concept, concept_index, session_dir):
     result = parse_json_response(response, debug_path)
 
     if result is None:
+        # Retry once — transient formatting errors are common enough to warrant this
+        print(f"    Parse failed — retrying concept {concept_index + 1}...")
+        response = call_claude(client, prompt, max_tokens=4000)
+        result = parse_json_response(response, debug_path)
+
+    if result is None:
+        print(f"    Both attempts failed. Skipping concept {concept_index + 1}.")
         return []
 
-    return result.get('cards', [])
+    return extract_cards(result)
 
 
 def run_extra_audit(client, concept_cards, session_dir, concept_index):
@@ -332,6 +372,67 @@ def run_extra_audit(client, concept_cards, session_dir, concept_index):
         concept_cards.append(card)
 
     return concept_cards, len(promoted_cards)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ANKI PACKAGE CONSTANTS
+#
+# These integers must never change after first use. Anki uses them to identify
+# the model and deck across imports — changing them creates duplicates instead
+# of updating existing cards.
+# ─────────────────────────────────────────────────────────────────────────────
+ANKI_MODEL_ID = 1607392319
+ANKI_DECK_ID  = 2059400110
+
+
+def save_apkg(all_cards, output_path, topic):
+    """
+    Write all cards to an Anki .apkg package file using genanki.
+
+    Uses a Cloze note type — required for {{c1::...}} deletions to render
+    correctly in Anki. A standard Q&A model would display the raw syntax
+    instead of hiding the cloze text.
+
+    Model fields:
+      Text  — the cloze sentence (rendered as a cloze card in Anki)
+      Extra — shown below the answer after reveal
+
+    The model_id and deck_id are hardcoded. Do not change them — Anki uses
+    these integers to match imported cards to existing notes and decks.
+    """
+    import genanki
+
+    # Define the Cloze note model
+    model = genanki.Model(
+        ANKI_MODEL_ID,
+        'ATLAS Cloze',
+        model_type=genanki.Model.CLOZE,
+        fields=[
+            {'name': 'Text'},
+            {'name': 'Extra'},
+        ],
+        templates=[
+            {
+                'name': 'ATLAS Cloze Card',
+                'qfmt': '{{cloze:Text}}',
+                'afmt': '{{cloze:Text}}<br><hr><br>{{Extra}}',
+            }
+        ]
+    )
+
+    deck = genanki.Deck(ANKI_DECK_ID, f'ATLAS - {topic}')
+
+    for card in all_cards:
+        note = genanki.Note(
+            model=model,
+            fields=[
+                card.get('text', ''),
+                card.get('extra', ''),
+            ]
+        )
+        deck.add_note(note)
+
+    genanki.Package(deck).write_to_file(output_path)
 
 
 def save_csv(all_cards, output_path, topic):
@@ -428,15 +529,20 @@ def main(json_path):
     print(f'\n{"─" * 47}')
     print(f'  {len(all_cards)} total cards  ({total_promoted} promoted from Extra)')
 
-    output_path = os.path.join(session_dir, 'cornell.csv')
-    save_csv(all_cards, output_path, topic)
+    csv_path  = os.path.join(session_dir, 'cornell.csv')
+    apkg_path = os.path.join(session_dir, 'cornell.apkg')
 
-    print(f'\n  ✓ {output_path}')
+    save_csv(all_cards, csv_path, topic)
+    print(f'\n  ✓ {csv_path}')
+
+    save_apkg(all_cards, apkg_path, topic)
+    print(f'  ✓ {apkg_path}')
+
     print()
     print('═' * 47)
     print('  Done. To import into Anki:')
-    print('  File → Import → select cornell.csv')
-    print('  Note type: Cloze')
+    print('  File → Import → select cornell.apkg')
+    print('  (cornell.csv also available for manual import)')
     print('═' * 47)
     print()
 
