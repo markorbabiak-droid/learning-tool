@@ -419,7 +419,8 @@ ANKI_CARD_CSS = """
 hr {
     border: none;
     border-top: 1px solid #4C566A;
-    margin: 16px 0;
+    margin-top: 20px;
+    margin-bottom: 20px;
 }
 """
 
