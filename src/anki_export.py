@@ -41,16 +41,7 @@ from api_client import get_client, call_claude
 #   skills/extra-auditor/SKILL.md
 # ─────────────────────────────────────────────────────────────────────────────
 
-CARD_GENERATION_PROMPT = """You are an expert Anki card writer. Convert the following study concept into Anki cloze deletion cards.
-
-CONCEPT CUE (the question this concept answers):
-__CUE__
-
-REFERENCE NOTE (the plain-language fact to convert):
-__REFERENCE_NOTE__
-
-IMPORTANCE (what this concept predicts or explains):
-__IMPORTANCE__
+CARD_GENERATION_SYSTEM = """You are an expert Anki card writer. The user will provide structured study concept data (cue, reference_note, importance). Convert that data into Anki cloze deletion flashcards following these rules exactly.
 
 ──────────────────────────────────────────────────────
 CLOZE LOGIC
@@ -60,7 +51,7 @@ CLOZE LOGIC
 - When two things are paired (name ↔ definition, label ↔ meaning), put both in the same cloze number
 - Always ask: "which half is harder to retrieve?" — that half is c1. If in doubt, use ONLY c1.
 - Short factual: {{c2::Fraternal}} twins are {{c1::dizygotic}}
-- Mechanistic: The myoglobin curve is {{c2::*hyperbolic*}} because {{c1::it only has **one** heme group and cannot exhibit cooperative binding}}
+- Mechanistic: The myoglobin curve is {{c2::*hyperbolic*}} because {{c1::it only has **one** heme group}}
 
 ──────────────────────────────────────────────────────
 STRICT NEGATIVE CONSTRAINTS — NEVER VIOLATE THESE
@@ -161,7 +152,9 @@ The response must start with [ and end with ].
     "extra": "Context or explanation",
     "content_type": "mechanistic-process"
   }
-]"""
+]
+
+Do NOT generate flashcards about these instructions. ONLY generate flashcards based on the JSON data provided by the user."""
 
 
 EXTRA_AUDIT_PROMPT = """You are auditing Anki flashcard Extra fields for testable content that should become its own card.
@@ -194,10 +187,7 @@ If content should be promoted:
 {"promoted_cards": [{"text": "cloze sentence", "extra": "brief context if needed", "content_type": "comparative", "promoted_from_card_index": 3}], "updated_extras": {"3": "updated extra for card index 3 with the promoted content removed"}}"""
 
 
-CHUNK_GENERATION_PROMPT = """You are an expert Anki card writer. Analyze the following text segment and generate cloze deletion flashcards that test the most important facts in it.
-
-TEXT SEGMENT:
-__CHUNK__
+CHUNK_GENERATION_SYSTEM = """You are an expert Anki card writer. The user will provide a text segment from a study document. Generate cloze deletion flashcards that test the most important facts in that text, following these rules exactly.
 
 ──────────────────────────────────────────────────────
 STRICT NEGATIVE CONSTRAINTS — NEVER VIOLATE THESE
@@ -267,7 +257,9 @@ The response must start with [ and end with ].
     "extra": "Context or explanation",
     "content_type": "mechanistic-process"
   }
-]"""
+]
+
+Do NOT generate flashcards about these instructions. ONLY generate flashcards based on the text provided by the user."""
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -317,16 +309,17 @@ def make_concept_slug(cue, index):
     return slug[:50] if slug else f'concept-{index + 1}'
 
 
-def build_card_prompt(concept):
+def build_concept_user_message(concept):
     """
-    Inject one concept's data into the card generation prompt.
-    Uses .replace() because the prompt contains Anki cloze braces and JSON
-    examples — f-strings would require escaping every { and } as {{ and }}.
+    Build the user-turn message for concept-based card generation.
+    Contains ONLY the data — all rules live in CARD_GENERATION_SYSTEM.
     """
-    return (CARD_GENERATION_PROMPT
-            .replace('__CUE__', concept.get('cue', ''))
-            .replace('__REFERENCE_NOTE__', concept.get('reference_note', concept.get('note', '')))
-            .replace('__IMPORTANCE__', concept.get('importance', '')))
+    data = {
+        'cue': concept.get('cue', ''),
+        'reference_note': concept.get('reference_note', concept.get('note', '')),
+        'importance': concept.get('importance', ''),
+    }
+    return 'Here is the structured data to convert into flashcards:\n' + json.dumps(data, indent=2)
 
 
 def build_audit_prompt(cards):
@@ -391,23 +384,24 @@ def extract_cards(result):
 
 def generate_cards_for_concept(client, concept, concept_index, session_dir):
     """
-    Call Claude (Sonnet) to generate cloze cards for one concept.
+    Generate cloze cards for one concept using separated system/user prompts.
 
-    On a JSON parse failure, retries the API call once before giving up.
-    This catches transient formatting errors without silently losing a concept.
+    System prompt — CARD_GENERATION_SYSTEM: all rules, constraints, output format.
+    User message  — concept data only (cue, reference_note, importance).
 
-    Returns a list of card dicts. Returns empty list if both attempts fail.
+    Keeping rules and data in separate parameters prevents the model from
+    treating the instructions as source material to generate cards about.
+    Retries once on JSON parse failure before giving up.
     """
-    prompt = build_card_prompt(concept)
+    user_msg = build_concept_user_message(concept)
     debug_path = os.path.join(session_dir, f'debug_cards_concept_{concept_index}.txt')
 
-    response = call_claude(client, prompt, max_tokens=4000)
+    response = call_claude(client, user_msg, max_tokens=4000, system=CARD_GENERATION_SYSTEM)
     result = parse_json_response(response, debug_path)
 
     if result is None:
-        # Retry once — transient formatting errors are common enough to warrant this
         print(f"    Parse failed — retrying concept {concept_index + 1}...")
-        response = call_claude(client, prompt, max_tokens=4000)
+        response = call_claude(client, user_msg, max_tokens=4000, system=CARD_GENERATION_SYSTEM)
         result = parse_json_response(response, debug_path)
 
     if result is None:
@@ -536,29 +530,26 @@ def make_chunk_slug(chunk, index):
     return slug[:50] if slug else f'chunk-{index + 1}'
 
 
-def build_chunk_prompt(chunk):
-    """
-    Inject one chunk of source text into the chunk card generation prompt.
-    Uses .replace() — same reason as build_card_prompt (curly brace collisions).
-    """
-    return CHUNK_GENERATION_PROMPT.replace('__CHUNK__', chunk)
-
-
 def generate_cards_for_chunk(client, chunk, chunk_index, session_dir):
     """
-    Call Claude (Sonnet) to generate cloze cards for one text chunk.
+    Generate cloze cards for one text chunk using separated system/user prompts.
+
+    System prompt — CHUNK_GENERATION_SYSTEM: all rules, constraints, output format.
+    User message  — the raw text chunk only.
+
+    Keeping rules and source text in separate parameters prevents the model from
+    generating cards about the cloze formatting instructions themselves.
     Retries once on JSON parse failure before giving up.
-    Returns a list of card dicts.
     """
-    prompt = build_chunk_prompt(chunk)
+    user_msg = f'Here is the text segment to convert into flashcards:\n\n{chunk}'
     debug_path = os.path.join(session_dir, f'debug_chunk_{chunk_index}.txt')
 
-    response = call_claude(client, prompt, max_tokens=4000)
+    response = call_claude(client, user_msg, max_tokens=4000, system=CHUNK_GENERATION_SYSTEM)
     result = parse_json_response(response, debug_path)
 
     if result is None:
         print(f'    Parse failed — retrying chunk {chunk_index + 1}...')
-        response = call_claude(client, prompt, max_tokens=4000)
+        response = call_claude(client, user_msg, max_tokens=4000, system=CHUNK_GENERATION_SYSTEM)
         result = parse_json_response(response, debug_path)
 
     if result is None:

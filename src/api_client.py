@@ -51,7 +51,7 @@ def get_client():
     return anthropic.Anthropic(api_key=api_key)
 
 
-def call_claude(client, prompt, max_tokens=4000, model="claude-sonnet-4-6"):
+def call_claude(client, prompt, max_tokens=4000, model="claude-sonnet-4-6", system=None):
     """
     Sends a prompt to Claude and returns the response as a plain string.
 
@@ -61,24 +61,31 @@ def call_claude(client, prompt, max_tokens=4000, model="claude-sonnet-4-6"):
 
     Arguments:
       client     — the connection object returned by get_client()
-      prompt     — the text instructions to send to Claude
+      prompt     — the user-turn text to send to Claude
       max_tokens — the maximum length Claude can respond with
                    (4000 tokens ≈ about 3,000 words — enough for rich notes)
       model      — which Claude model to use. Defaults to Sonnet for note
                    generation. Pass "claude-haiku-4-5-20251001" for cheaper
                    classification tasks like the Extra field audit.
+      system     — optional system prompt. When provided, rules and instructions
+                   go here and only the data goes in the user turn (prompt).
+                   This prevents the model from confusing instructions with
+                   the material it is supposed to process.
 
     Returns: Claude's response as a plain Python string.
     """
 
+    # Build the API call kwargs — system is optional
+    call_kwargs = dict(
+        model=model,
+        max_tokens=max_tokens,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    if system:
+        call_kwargs["system"] = system
+
     try:
-        response = client.messages.create(
-            model=model,
-            max_tokens=max_tokens,
-            messages=[
-                {"role": "user", "content": prompt}
-            ]
-        )
+        response = client.messages.create(**call_kwargs)
 
         # response.content is a list of content blocks.
         # For a text-only response, there's always exactly one block at index [0].
